@@ -1,0 +1,9 @@
+torch
+transformers
+stable-fast
+xformers
+triton
+diffusers
+safetensors
+mixdiff
+asdff

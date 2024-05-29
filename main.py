@@ -1,0 +1,1 @@
+from pipelines.text2img_pipeline import Text2ImgPipeline
