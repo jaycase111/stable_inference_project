@@ -1,5 +1,5 @@
 import torch
-
+from safetensors.torch import load_file, save_file
 from acceleration.preset_lora import PresetLora
 from diffusers import AutoPipelineForText2Image, AutoPipelineForImage2Image, LCMScheduler
 from sfast.compilers.diffusion_pipeline_compiler import (compile,
@@ -9,11 +9,14 @@ from sfast.compilers.diffusion_pipeline_compiler import (compile,
 def switch_lora(unet, lora, weight=1.):
     # TODO: 支持Lora-权重加载
     state_dict = unet.state_dict()
-    unet.load_attn_procs(lora)
+    unet.load_attn_procs(
+        lora
+    )
     update_state_dict(state_dict, unet.state_dict())
     unet.load_state_dict(state_dict, assign=True)
 
-def reset_loras_to_zero(unet: torch.Module, preset_lora: PresetLora):
+
+def reset_loras_to_zero(unet: torch.nn.Module, preset_lora: PresetLora):
     """
     将之前加载的Lora参数 (除LCM以外) 全部置为0
     :return:
@@ -25,7 +28,7 @@ def reset_loras_to_zero(unet: torch.Module, preset_lora: PresetLora):
 
 def load_lora_file(
                     preset_lora: PresetLora,
-                    unet: torch.Module,
+                    unet: torch.nn.Module,
                     tag: str,
                     lora_file: str,
                     weight: float = 1.
@@ -43,7 +46,9 @@ def load_lora_file(
             return
         switch_lora(unet, lora_file, weight)
 
+
 def compile_stable_fast_pipeline(pipeline: AutoPipelineForText2Image):
+
     config = CompilationConfig.Default()
     try:
         import xformers
@@ -57,6 +62,7 @@ def compile_stable_fast_pipeline(pipeline: AutoPipelineForText2Image):
         print('Triton not installed, skip')
     config.enable_cuda_graph = True
 
+    print("pipeline ", type(pipeline))
     pipeline = compile(pipeline, config)
     return pipeline
 
@@ -64,8 +70,6 @@ def compile_stable_fast_pipeline(pipeline: AutoPipelineForText2Image):
 def update_state_dict(dst, src):
     for key, value in src.items():
         dst[key].copy_(value)
-
-
 
 class StableFastCompilePipeline:
 
@@ -78,20 +82,17 @@ class StableFastCompilePipeline:
         if lcm_lora_file:
             base_pipeline.scheduler = LCMScheduler.from_config(base_pipeline.scheduler.config)
             base_pipeline.load_lora_weights(lcm_lora_file, adapter_name="lcm")
-            lora_name_list, lora_weight_list = ["lcm"], [1.0]
         else:
-            lora_name_list, lora_weight_list = [], []
+            pass
+        # 将LCM或者Lighting-Lora做融合
+        base_pipeline.fuse_lora()
 
         self.preset_lora = PresetLora(preset_lora_config)
-
+        self.pipeline = compile_stable_fast_pipeline(base_pipeline)
         for lora_name in self.preset_lora.get_support_loras():
             lora_file = self.preset_lora.get_zero_role_file(lora_name)
-            base_pipeline.load_lora_weights(lora_file, adapter_name=lora_name)
-            lora_name_list.append(lora_name)
-            lora_weight_list.append(0.8)
-
-        base_pipeline = base_pipeline.set_adapters(lora_name_list, adapter_weights=lora_weight_list)
-        self.pipeline = compile_stable_fast_pipeline(base_pipeline)
+            # TODO: 可以通过adapter_name 来做不同Lora版本控制
+            self.pipeline.load_lora_weights(lora_file)
 
     def get_preset_lora(self) -> PresetLora:
         return self.preset_lora

@@ -1,6 +1,6 @@
 import torch
 from typing import List
-from diffusers import AutoPipelineForText2Image
+from diffusers import AutoPipelineForText2Image, StableDiffusionXLPipeline, EulerAncestralDiscreteScheduler
 from cache_manager.lora_manager import LoraManager
 from acceleration.stable_fast_accelerate import StableFastCompilePipeline
 from prompt_parser.base_prompt_parser import parse_prompt_not_weight, parse_loras, ExtraNetworkParams
@@ -27,10 +27,13 @@ class Text2ImgPipeline:
         self.compile_pipeline = self._init_compile_model()
 
     def _init_compile_model(self):
-        pipeline = AutoPipelineForText2Image.from_pretrained(self.pipeline_path,
+        pipeline = StableDiffusionXLPipeline.from_pretrained(self.pipeline_path,
                                                              torch_dtype=torch.float16,
-                                                             use_safetensors=True, variant="fp16"
                                                              )
+        pipeline.scheduler = EulerAncestralDiscreteScheduler.from_config(
+            pipeline.scheduler.config)
+        pipeline.safety_checker = None
+        pipeline.to(torch.device('cuda'))
         compile_pipeline = StableFastCompilePipeline(
             pipeline, self.preset_lora_config, self.lcm_file
         )
@@ -49,8 +52,10 @@ class Text2ImgPipeline:
             positional = entity.positional
             lora_name = positional[0]
             weight = positional[1] if len(positional) > 1 else 1.
-            tag, file_path = self.lora_manager.query_lora_file(lora_name)
-            if not tag:
+            print("lora_name and weight: ", lora_name, weight)
+            tag = self.lora_manager.query_lora_tag(lora_name)
+            file_path = self.lora_manager.query_lora_file(lora_name)
+            if not file_path:
                 tag_lora_map[tag] = [file_path, weight]
         return tag_lora_map
 

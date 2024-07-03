@@ -1,9 +1,9 @@
-torch
-transformers
-stable-fast
-xformers
-triton
-diffusers
-safetensors
+torch>=2.1.0
+xformers>=0.0.22
+triton>=2.1.0
+diffusers>=0.19.3
+ninja
+stable-fast==1.0.5
+peft
 mixdiff
-asdff
+scipy
